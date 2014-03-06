@@ -66,11 +66,22 @@ bool AP_RangeFinder_PulsedLightLRF::take_reading()
         return healthy;
     }
 
-    // send command to take reading
-    if (hal.i2c->writeRegister(_addr, AP_RANGEFINDER_PULSEDLIGHTLRF_COMMAND_REG, AP_RANGEFINDER_PULSEDLIGHTLRF_CMDREG_ACQUISITION) != 0) {
-        healthy = false;
-    }else{
-        healthy = true;
+    // assume the worst
+    healthy = false;
+    
+    // sensor initialization
+    if (hal.i2c->writeRegister(_addr, AP_RANGEFINDER_PULSEDLIGHTLRF_X01_REG, AP_RANGEFINDER_PULSEDLIGHTLRF_X01REG_INIT) == 0) {
+        if (hal.i2c->writeRegister(_addr, AP_RANGEFINDER_PULSEDLIGHTLRF_X02_REG, AP_RANGEFINDER_PULSEDLIGHTLRF_X02REG_INIT) == 0) {
+            if (hal.i2c->writeRegister(_addr, AP_RANGEFINDER_PULSEDLIGHTLRF_X04_REG, AP_RANGEFINDER_PULSEDLIGHTLRF_X04REG_INIT) == 0) {
+                if (hal.i2c->writeRegister(_addr, AP_RANGEFINDER_PULSEDLIGHTLRF_X12_REG, AP_RANGEFINDER_PULSEDLIGHTLRF_X12REG_INIT) == 0) {
+                    
+                    // send command to take reading
+                    if (hal.i2c->writeRegister(_addr, AP_RANGEFINDER_PULSEDLIGHTLRF_MEASURE_REG, AP_RANGEFINDER_PULSEDLIGHTLRF_MSRREG_ACQUIRE) == 0) {
+                        healthy = true;
+                    }
+                }
+            }
+        }
     }
 
     // return semaphore
@@ -104,6 +115,7 @@ int16_t AP_RangeFinder_PulsedLightLRF::read()
             healthy = true;
             // combine results into distance
             ret_value = buff[0] << 8 | buff[1];
+            hal.console->printf_P(PSTR("Upper Byte:%x Lower Byte:%x\n"),(int)buff[0],(int)buff[1]);
         }
     }
 
@@ -111,12 +123,16 @@ int16_t AP_RangeFinder_PulsedLightLRF::read()
     ret_value = constrain_int16(ret_value, min_distance, max_distance);
     ret_value = _mode_filter->apply(ret_value);
 
+    // kick off another reading for next time
+    if (hal.i2c->writeRegister(_addr, AP_RANGEFINDER_PULSEDLIGHTLRF_MEASURE_REG, AP_RANGEFINDER_PULSEDLIGHTLRF_MSRREG_ACQUIRE) == 0) {
+        healthy = true;
+    }
+    else {
+        healthy = false;
+    }
+    
     // return semaphore
     i2c_sem->give();
-
-    // kick off another reading for next time
-    // To-Do: replace this with continuous mode
-    take_reading();
 
     // to-do: do we really want to return 0 if reading the distance fails?
     return ret_value;
