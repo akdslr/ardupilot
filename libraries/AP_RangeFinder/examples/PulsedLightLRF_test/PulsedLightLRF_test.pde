@@ -29,7 +29,7 @@ AP_RangeFinder_PulsedLightLRF lrf(&mode_filter);
 void setup()
 {
     // print welcome message
-    hal.console->println("PulsedLight LRF Test v2.0");
+    hal.console->println("PulsedLight LRF Test v2.0 - 500 microseconds");
 
     // ensure i2c is slow
     hal.i2c->setHighSpeed(false);
@@ -51,7 +51,7 @@ void loop()
     int16_t distance;
 
     // Delay between reads
-    hal.scheduler->delay(1000);
+    hal.scheduler->delay(100);
     
     // get distance
     distance = lrf.read();
