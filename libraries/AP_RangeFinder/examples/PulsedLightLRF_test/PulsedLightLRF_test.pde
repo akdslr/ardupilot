@@ -29,7 +29,7 @@ AP_RangeFinder_PulsedLightLRF lrf(&mode_filter);
 void setup()
 {
     // print welcome message
-    hal.console->println("PulsedLight LRF Test v2.0 - 500 microseconds");
+    hal.console->println("PulsedLight LRF Test v2.0");
 
     // ensure i2c is slow
     hal.i2c->setHighSpeed(false);
