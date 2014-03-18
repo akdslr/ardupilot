@@ -69,22 +69,9 @@ bool AP_RangeFinder_PulsedLightLRF::take_reading()
     // assume the worst
     healthy = false;
     
-    // sensor initialization
-    if (hal.i2c->writeRegister(_addr, AP_RANGEFINDER_PULSEDLIGHTLRF_X01_REG, AP_RANGEFINDER_PULSEDLIGHTLRF_X01REG_INIT) == 0) {
-        hal.scheduler->delay_microseconds(200);
-        if (hal.i2c->writeRegister(_addr, AP_RANGEFINDER_PULSEDLIGHTLRF_X02_REG, AP_RANGEFINDER_PULSEDLIGHTLRF_X02REG_INIT) == 0) {
-            hal.scheduler->delay_microseconds(200);
-            if (hal.i2c->writeRegister(_addr, AP_RANGEFINDER_PULSEDLIGHTLRF_X04_REG, AP_RANGEFINDER_PULSEDLIGHTLRF_X04REG_INIT) == 0) {
-                hal.scheduler->delay_microseconds(200);
-                if (hal.i2c->writeRegister(_addr, AP_RANGEFINDER_PULSEDLIGHTLRF_X12_REG, AP_RANGEFINDER_PULSEDLIGHTLRF_X12REG_INIT) == 0) {
-                    hal.scheduler->delay_microseconds(200);
-                    // send command to take reading
-                    if (hal.i2c->writeRegister(_addr, AP_RANGEFINDER_PULSEDLIGHTLRF_MEASURE_REG, AP_RANGEFINDER_PULSEDLIGHTLRF_MSRREG_ACQUIRE) == 0) {
-                        healthy = true;
-                    }
-                }
-            }
-        }
+    // send command to take reading
+    if (hal.i2c->writeRegister(_addr, AP_RANGEFINDER_PULSEDLIGHTLRF_MEASURE_REG, AP_RANGEFINDER_PULSEDLIGHTLRF_MSRREG_ACQUIRE) == 0) {
+        healthy = true;
     }
     
     hal.scheduler->delay_microseconds(200);
@@ -129,19 +116,13 @@ int16_t AP_RangeFinder_PulsedLightLRF::read()
     ret_value = _mode_filter->apply(ret_value);
 
     hal.scheduler->delay_microseconds(200);
-
-    // kick off another reading for next time
-    if (hal.i2c->writeRegister(_addr, AP_RANGEFINDER_PULSEDLIGHTLRF_MEASURE_REG, AP_RANGEFINDER_PULSEDLIGHTLRF_MSRREG_ACQUIRE) == 0) {
-        healthy = true;
-    }
-    else {
-        healthy = false;
-    }  
-    hal.scheduler->delay_microseconds(200);
  
     // return semaphore
     i2c_sem->give();
 
+    // kick off another reading for next time
+    take_reading();
+    
     // to-do: do we really want to return 0 if reading the distance fails?
     return ret_value;
 }
