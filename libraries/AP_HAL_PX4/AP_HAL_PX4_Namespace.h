@@ -13,6 +13,7 @@ namespace PX4 {
 	class PX4Util;
         class PX4GPIO;
         class PX4DigitalSource;
+        class PX4I2CDriver;
 }
 
 #endif //__AP_HAL_PX4_NAMESPACE_H__
