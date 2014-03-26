@@ -3,6 +3,8 @@
 
 #include <AP_HAL_PX4.h>
 
+#include <nuttx/i2c.h>
+
 class PX4::PX4I2CDriver : public AP_HAL::I2CDriver {
 public:
     PX4I2CDriver(AP_HAL::Semaphore* semaphore);
@@ -32,12 +34,21 @@ public:
     uint8_t lockup_count();
 
     AP_HAL::Semaphore* get_semaphore() { return _semaphore; }
+protected:
+	/**
+	 * The number of times a read or write operation will be retried on
+	 * error.
+	 */
+	unsigned		_retries;
+	/**
+	 * The I2C bus number the device is attached to.
+	 */
+	int			   _bus;
 private:
-    AP_HAL::Semaphore* _semaphore;
-    bool set_address(uint8_t addr);
-    int _fd;
-    uint8_t _addr;
-    const char *_device;
+    AP_HAL::Semaphore*  _semaphore;
+	uint32_t		    _frequency;
+   	struct i2c_dev_s	*_dev;
+    int                _transfer(i2c_msg_s *msgv, unsigned msgs);
 };
 
 #endif // __AP_HAL_PX4_I2CDRIVER_H__

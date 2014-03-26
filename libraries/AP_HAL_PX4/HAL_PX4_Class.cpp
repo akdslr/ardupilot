@@ -127,6 +127,7 @@ static int main_loop(int argc, char **argv)
     hal.scheduler->init(NULL);
     hal.rcin->init(NULL);
     hal.rcout->init(NULL);
+    hal.i2c->begin();
     hal.analogin->init(NULL);
     hal.gpio->init();
 
