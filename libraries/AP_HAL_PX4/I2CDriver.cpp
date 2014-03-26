@@ -18,13 +18,25 @@
 #define SUB_ADDR_SETTINGS	0x84
 #define SUB_ADDR_PWM2		0x83	/**< red      (without auto-increment) */
 
+/* Pulsed Light */
+// i2c address
+#define AP_RANGEFINDER_PULSEDLIGHTLRF_ADDR   0x42
+
+// registers
+#define AP_RANGEFINDER_PULSEDLIGHTLRF_MEASURE_REG           0x00
+#define AP_RANGEFINDER_PULSEDLIGHTLRF_DISTHIGH_REG          0x0f // high byte of distance measurement
+#define AP_RANGEFINDER_PULSEDLIGHTLRF_DISTLOW_REG           0x10 // low byte of distance measurement
+
+// Measurement
+#define AP_RANGEFINDER_PULSEDLIGHTLRF_MSRREG_ACQUIRE        0x61
+
 using namespace PX4;
 
 extern const AP_HAL::HAL& hal;
 
 PX4I2CDriver::PX4I2CDriver(AP_HAL::Semaphore* semaphore) : 
     _semaphore(semaphore),
-    _bus(PX4_I2C_BUS_LED),
+    _bus(PX4_I2C_BUS_EXPANSION),
     _frequency(100000),
     _retries(3)
 {
@@ -36,54 +48,26 @@ void PX4I2CDriver::begin() {
 
 void PX4I2CDriver::end() {
     // I'm just using this for testing for now
-
-    // Check is the i2c bus was attached to properly
-    if (_dev == nullptr) {
-        hal.console->print_P(PSTR("\n PX4I2CDriver begin failed \n"));
-	}
-    else {
-        hal.console->print_P(PSTR("\n PX4I2CDriver begin was successful \n"));
-    }
+    uint8_t buff[2];
+    int16_t ret_value = 0;
     
-    uint8_t data[1] = {0};
-	if (readRegister(PX4_I2C_OBDEV_LED, SUB_ADDR_SETTINGS, &data[0]) == 1) {
-        hal.console->print_P(PSTR("\n PX4I2CDriver settings read failed \n"));
-	}
-    else {
-        hal.console->print_P(PSTR("\n PX4I2CDriver settings read successful \n"));
+    if (hal.i2c->writeRegister(AP_RANGEFINDER_PULSEDLIGHTLRF_ADDR, AP_RANGEFINDER_PULSEDLIGHTLRF_MEASURE_REG, AP_RANGEFINDER_PULSEDLIGHTLRF_MSRREG_ACQUIRE) == 0) {
+        hal.console->print_P(PSTR("\n PX4I2CDriver pulsedlight write successful \n"));
     }
-    hal.scheduler->delay(1);
-    
-    uint8_t curRed[2] = {0};
-	if (readRegister(PX4_I2C_OBDEV_LED, SUB_ADDR_PWM2, &curRed[0]) == 1) {
-        hal.console->print_P(PSTR("\n PX4I2CDriver red read failed \n"));
-	}
     else {
-        hal.console->print_P(PSTR("\n PX4I2CDriver red read successful \n"));
-        hal.console->printf_P(PSTR("\n curRed evaluates to %d \n"), curRed[0]);
+        hal.console->print_P(PSTR("\n PX4I2CDriver pulsedlight write failed \n"));
     }
-    hal.scheduler->delay(1);
+    hal.scheduler->delay(5);
     
-    uint8_t _r = 255;
-    float _brightness = 1.0f;
-    uint8_t calculatedR = (uint8_t)((int)(_r * _brightness) >> 4);
-    hal.console->printf_P(PSTR("\n red value written evaluates to %d \n"), calculatedR);
-	if (writeRegister(PX4_I2C_OBDEV_LED, SUB_ADDR_PWM2, (uint8_t)((int)(_r * _brightness) >> 4)) == 1) {
-        hal.console->print_P(PSTR("\n PX4I2CDriver red write failed \n"));
-	}
-    else {
-        hal.console->print_P(PSTR("\n PX4I2CDriver red write successful \n"));
+    if (hal.i2c->readRegisters(AP_RANGEFINDER_PULSEDLIGHTLRF_ADDR, AP_RANGEFINDER_PULSEDLIGHTLRF_DISTHIGH_REG, 1, &buff[0]) == 0) {
+        hal.scheduler->delay(5);
+        // read the low byte
+        if (hal.i2c->readRegisters(AP_RANGEFINDER_PULSEDLIGHTLRF_ADDR, AP_RANGEFINDER_PULSEDLIGHTLRF_DISTLOW_REG, 1, &buff[1]) == 0) {            
+            // combine results into distance
+            ret_value = buff[0] << 8 | buff[1];
+            hal.console->printf_P(PSTR("distance: %d high: %x low: %x\n"),(int)ret_value,(int)buff[0], (int)buff[1]);
+        }
     }
-    hal.scheduler->delay(1);
-    
-	if (readRegister(PX4_I2C_OBDEV_LED, SUB_ADDR_PWM2, &curRed[1]) == 1) {
-        hal.console->print_P(PSTR("\n PX4I2CDriver red after write read failed \n"));
-	}
-    else {
-        hal.console->print_P(PSTR("\n PX4I2CDriver red after write read successful \n"));
-        hal.console->printf_P(PSTR("\n curRed after evaluates to %d \n"), curRed[1]);
-    }    
-    hal.scheduler->delay(1);
 }
 void PX4I2CDriver::setTimeout(uint16_t ms) {}
 void PX4I2CDriver::setHighSpeed(bool active) {}
