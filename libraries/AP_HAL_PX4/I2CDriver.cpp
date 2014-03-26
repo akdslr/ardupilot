@@ -8,10 +8,7 @@
 #define PX4_I2C_OBDEV_HMC5883	0x1e
 
 #define HMC5883L_ADDRESS		PX4_I2C_OBDEV_HMC5883
-#define HMC5883L_DEVICE_PATH	"/dev/hmc5883"
-#define ADDR_CONF_A			0x00
-#define ADDR_ID_A			0x0a
-#define ID_A_WHO_AM_I			'H'
+#define ADDR_ID_A			    0x0a
 
 using namespace PX4;
 
@@ -30,6 +27,8 @@ void PX4I2CDriver::begin() {
 }
 
 void PX4I2CDriver::end() {
+    // I'm just using this for testing for now
+
     // Check is the i2c bus was attached to properly
     if (_dev == nullptr) {
         hal.console->print_P(PSTR("\n PX4I2CDriver begin failed \n"));
@@ -140,11 +139,6 @@ int PX4I2CDriver::_transfer(i2c_msg_s *msgv, unsigned msgs)
 	unsigned retry_count = 0;
 
 	do {
-		/*
-		 * I2C architecture means there is an unavoidable race here
-		 * if there are any devices on the bus with a different frequency
-		 * preference.  Really, this is pointless.
-		 */
 		I2C_SETFREQUENCY(_dev, _frequency);
 		ret = I2C_TRANSFER(_dev, msgv, msgs);
 
