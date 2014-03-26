@@ -4,11 +4,19 @@
 #if CONFIG_HAL_BOARD == HAL_BOARD_PX4
 #include "I2CDriver.h"
 
+/* I2C busses */
 #define PX4_I2C_BUS_EXPANSION	1
+#define PX4_I2C_BUS_LED		2
+
+/* Devices on the onboard bus.
+ *
+ * Note that these are unshifted addresses.
+ */
+#define PX4_I2C_OBDEV_LED	0x55
 #define PX4_I2C_OBDEV_HMC5883	0x1e
 
-#define HMC5883L_ADDRESS		PX4_I2C_OBDEV_HMC5883
-#define ADDR_ID_A			    0x0a
+#define SUB_ADDR_SETTINGS	0x84
+#define SUB_ADDR_PWM2		0x83	/**< red      (without auto-increment) */
 
 using namespace PX4;
 
@@ -16,8 +24,8 @@ extern const AP_HAL::HAL& hal;
 
 PX4I2CDriver::PX4I2CDriver(AP_HAL::Semaphore* semaphore) : 
     _semaphore(semaphore),
-    _bus(PX4_I2C_BUS_EXPANSION),
-    _frequency(400000),
+    _bus(PX4_I2C_BUS_LED),
+    _frequency(100000),
     _retries(3)
 {
 }
@@ -38,12 +46,44 @@ void PX4I2CDriver::end() {
     }
     
     uint8_t data[1] = {0};
-	if (readRegister(HMC5883L_ADDRESS, ADDR_ID_A, &data[0]) == 1) {
-        hal.console->print_P(PSTR("\n PX4I2CDriver read failed \n"));
+	if (readRegister(PX4_I2C_OBDEV_LED, SUB_ADDR_SETTINGS, &data[0]) == 1) {
+        hal.console->print_P(PSTR("\n PX4I2CDriver settings read failed \n"));
 	}
     else {
-        hal.console->print_P(PSTR("\n PX4I2CDriver read successful \n"));
+        hal.console->print_P(PSTR("\n PX4I2CDriver settings read successful \n"));
     }
+    hal.scheduler->delay(1);
+    
+    uint8_t curRed[2] = {0};
+	if (readRegister(PX4_I2C_OBDEV_LED, SUB_ADDR_PWM2, &curRed[0]) == 1) {
+        hal.console->print_P(PSTR("\n PX4I2CDriver red read failed \n"));
+	}
+    else {
+        hal.console->print_P(PSTR("\n PX4I2CDriver red read successful \n"));
+        hal.console->printf_P(PSTR("\n curRed evaluates to %d \n"), curRed[0]);
+    }
+    hal.scheduler->delay(1);
+    
+    uint8_t _r = 255;
+    float _brightness = 1.0f;
+    uint8_t calculatedR = (uint8_t)((int)(_r * _brightness) >> 4);
+    hal.console->printf_P(PSTR("\n red value written evaluates to %d \n"), calculatedR);
+	if (writeRegister(PX4_I2C_OBDEV_LED, SUB_ADDR_PWM2, (uint8_t)((int)(_r * _brightness) >> 4)) == 1) {
+        hal.console->print_P(PSTR("\n PX4I2CDriver red write failed \n"));
+	}
+    else {
+        hal.console->print_P(PSTR("\n PX4I2CDriver red write successful \n"));
+    }
+    hal.scheduler->delay(1);
+    
+	if (readRegister(PX4_I2C_OBDEV_LED, SUB_ADDR_PWM2, &curRed[1]) == 1) {
+        hal.console->print_P(PSTR("\n PX4I2CDriver red after write read failed \n"));
+	}
+    else {
+        hal.console->print_P(PSTR("\n PX4I2CDriver red after write read successful \n"));
+        hal.console->printf_P(PSTR("\n curRed after evaluates to %d \n"), curRed[1]);
+    }    
+    hal.scheduler->delay(1);
 }
 void PX4I2CDriver::setTimeout(uint16_t ms) {}
 void PX4I2CDriver::setHighSpeed(bool active) {}
