@@ -15,7 +15,6 @@
 #include "AnalogIn.h"
 #include "Util.h"
 #include "GPIO.h"
-#include "I2CDriver.h"
 
 #include <AP_HAL_Empty.h>
 #include <AP_HAL_Empty_Private.h>
@@ -32,7 +31,7 @@
 using namespace PX4;
 
 static Empty::EmptySemaphore  i2cSemaphore;
-static PX4I2CDriver  i2cDriver(&i2cSemaphore);
+static Empty::EmptyI2CDriver  i2cDriver(&i2cSemaphore);
 static Empty::EmptySPIDeviceManager spiDeviceManager;
 //static Empty::EmptyGPIO gpioDriver;
 
@@ -127,7 +126,6 @@ static int main_loop(int argc, char **argv)
     hal.scheduler->init(NULL);
     hal.rcin->init(NULL);
     hal.rcout->init(NULL);
-    hal.i2c->begin();
     hal.analogin->init(NULL);
     hal.gpio->init();
 
