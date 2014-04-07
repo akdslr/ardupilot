@@ -10,7 +10,7 @@ set -x
 
 echo "Testing ArduPlane build"
 pushd ArduPlane
-for b in all apm2 apm2beta apm1-hil apm1-hilsensors apm2-hil apm2-hilsensors sitl sitl-mount linux; do
+for b in all apm2 apm2beta apm1-hil apm1-hilsensors apm2-hil apm2-hilsensors sitl sitl-mount linux apm2-obc; do
     pwd
     make clean
     make $b -j4
@@ -56,6 +56,11 @@ for d in ArduPlane ArduCopter APMrover2; do
     popd
 done
 }
+
+pushd Tools/Replay
+make clean
+make linux -j4
+popd
 
 test -n "$PX4_ROOT" && test -d "$PX4_ROOT" && {
     ./Tools/scripts/build_all_px4.sh

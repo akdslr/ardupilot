@@ -4,10 +4,11 @@
    state of the vehicle we are tracking
  */
 static struct {
-    Location location; // lat, long in degrees * 10^7; alt in meters * 100
+    Location location;      // lat, long in degrees * 10^7; alt in meters * 100
+    int32_t  relative_alt;  // meters * 100
     uint32_t last_update_us;
-    float heading; // degrees
-    float ground_speed; // m/s
+    float heading;          // degrees
+    float ground_speed;     // m/s
 } vehicle;
 
 /**
@@ -19,7 +20,7 @@ static void update_pitch_servo(float pitch)
     // degrees(ahrs.pitch) is -90 to 90, where 0 is horizontal
     // pitch argument is -90 to 90, where 0 is horizontal
     // servo_out is in 100ths of a degree
-    float ahrs_pitch = degrees(ahrs.pitch);
+    float ahrs_pitch = ahrs.pitch_sensor*0.01f;
     int32_t err = (ahrs_pitch - pitch) * 100.0; 
     // Need to configure your servo so that increasing servo_out causes increase in pitch/elevation (ie pointing higher into the sky,
     // above the horizon. On my antenna tracker this requires the pitch/elevation servo to be reversed
@@ -39,22 +40,45 @@ static void update_pitch_servo(float pitch)
     // PITCH2SRV_IMAX   4000.000000
     int32_t new_servo_out = channel_pitch.servo_out - g.pidPitch2Srv.get_pid(err);
     channel_pitch.servo_out = constrain_float(new_servo_out, -9000, 9000);
+
+    // add slew rate limit
+    if (g.pitch_slew_time > 0.02f) {
+        uint16_t max_change = 0.02f * 18000 / g.pitch_slew_time;
+        if (max_change < 1) {
+            max_change = 1;
+        }
+        new_servo_out = constrain_float(new_servo_out,
+                                        channel_pitch.servo_out - max_change, 
+                                        channel_pitch.servo_out + max_change);
+    }
+    channel_pitch.servo_out = new_servo_out;
+
     channel_pitch.calc_pwm();
     channel_pitch.output();
 }
 
 /**
-   update the yaw (azimuth) servo. The aim is to drive the boards ahrs yaw to the
-   requested yaw, so the board (and therefore the antenna) will be pinting at the target
+   update the yaw (azimuth) servo. The aim is to drive the boards ahrs
+   yaw to the requested yaw, so the board (and therefore the antenna)
+   will be pointing at the target
  */
 static void update_yaw_servo(float yaw)
 {
-    // degrees(ahrs.yaw) is -180 to 180, where 0 is north
-    float ahrs_yaw = degrees(ahrs.yaw);
-    // yaw argument is 0 to 360 where 0 and 360 are north
-    // Make yaw -180-0-180 too
-    if (yaw > 180)
-        yaw = yaw - 360;
+    int32_t ahrs_yaw_cd = wrap_180_cd(ahrs.yaw_sensor);
+    int32_t yaw_cd   = wrap_180_cd(yaw*100);
+    const int16_t margin = 500; // 5 degrees slop
+
+    static uint16_t count = 0;
+    static uint32_t last_millis= 0;
+    uint32_t millis = hal.scheduler->millis();
+    if (millis > last_millis + 1000)
+    {
+//        hal.uartA->printf("ahrs_yaw_cd %ld yaw_cd %ld\n", ahrs_yaw_cd, yaw_cd);
+//        hal.uartA->printf("count %d\n", count);
+        last_millis = millis;
+        count = 0;
+    }
+    count++;
 
     // Antenna as Ballerina. Use with antenna that do not have continuously rotating servos, ie at some point in rotation
     // the servo limits are reached and the servo has to slew 360 degrees to the 'other side' to keep tracking.
@@ -82,73 +106,105 @@ static void update_yaw_servo(float yaw)
     // param set RC1_MIN 680
     // According to the specs at https://www.servocity.com/html/hs-645mg_ultra_torque.html,
     // that should be 600 through 2400, but the azimuth gearing in my antenna pointer is not exactly 2:1
-    int32_t err = (ahrs_yaw - yaw) * 100.0;
-    static int32_t last_err = 0.0;
+    int32_t err = wrap_180_cd(ahrs_yaw_cd - yaw_cd);
 
-    // Correct for wrapping yaw at +-180
-    // so we get the error to the _closest_ version of the target azimuth
-    // +ve error requires anticlockwise motion (ie towards more negative yaw)
-    if (err > 18000)
-        err -= 36000;
-    else if (err < -18000)
-        err += 36000;
+    /*
+      a positive error means that we need to rotate counter-clockwise
+      a negative error means that we need to rotate clockwise
 
-    static int32_t slew_to = 0;
+      Use our current yawspeed to determine if we are moving in the
+      right direction
+     */
+    static int8_t slew_dir;
+    static uint32_t slew_start_ms;
+    int8_t new_slew_dir = slew_dir;
 
-    int32_t servo_err = channel_yaw.servo_out - err; // Servo position we need to get to
-    if (   !slew_to
-        && servo_err > 19000 // 10 degreee deadband
-        && err < 0
-        && last_err > err)
-    {
-        // We need to be beyond the servo limits and the error magnitude is increasing
-        // Slew most of the way to the other side at high speed...
-        slew_to = servo_err - 27000;
+    Vector3f earth_rotation = ahrs.get_gyro() * ahrs.get_dcm_matrix();
+    bool making_progress;
+    if (slew_dir != 0) {
+        making_progress = (-slew_dir * earth_rotation.z >= 0);
+    } else {
+        making_progress = (err * earth_rotation.z >= 0);
     }
-    else if (   !slew_to
-             && servo_err < -19000 // 10 degreee deadband
-             && err > 0
-             && last_err < err)
-    {
-        // We need to be beyond the servo limits and the error magnitude is increasing
-        // Slew most of the way to the other side at high speed...
-        slew_to = servo_err + 27000;
-    }
-    else if (   slew_to < 0
-             && err > 0
-             && last_err < err)
-    {
-        // ...then let normal tracking take over
-        slew_to = 0;
-    }
-    else if (   slew_to > 0
-             && err < 0
-             && last_err > err)
-    {
-        // ...then let normal tracking take over
-        slew_to = 0;
+    if (abs(channel_yaw.servo_out) == 18000 && 
+        abs(err) > margin && 
+        making_progress && 
+        hal.scheduler->millis() - slew_start_ms > g.min_reverse_time*1000) {
+        // we are at the limit of the servo and are not moving in the
+        // right direction, so slew the other way
+        new_slew_dir = -channel_yaw.servo_out / 18000;
+        slew_start_ms = hal.scheduler->millis();
     }
 
-    if (slew_to)
-    {
-        channel_yaw.servo_out = slew_to;
+    /*
+      stop slewing and revert to normal control when normal control
+      should move us in the right direction
+     */
+    if (slew_dir * err < -margin) {
+        new_slew_dir = 0;
     }
-    else
-    {
-        // Normal tracking
-        // You will need to tune the yaw PID to suit your antenna and servos
-        // For my servos, suitable PID settings are:
-        // param set YAW2SRV_P 0.1
-        // param set YAW2SRV_I 0.05
-        // param set YAW2SRV_D 0
-        // param set YAW2SRV_IMAX 4000
-        
-        int32_t new_servo_out = channel_yaw.servo_out - g.pidYaw2Srv.get_pid(err);
-        channel_yaw.servo_out = constrain_float(new_servo_out, -18000, 18000);
+
+    if (new_slew_dir != slew_dir) {
+        gcs_send_text_fmt(PSTR("SLEW: %d/%d err=%ld servo=%ld ez=%.3f"), 
+                          (int)slew_dir, (int)new_slew_dir, 
+                          (long)err, 
+                          (long)channel_yaw.servo_out,
+                          degrees(ahrs.get_gyro().z));
     }
-    last_err = err;
+
+    slew_dir = new_slew_dir;
+
+    int16_t new_servo_out;
+    if (slew_dir != 0) {
+        new_servo_out = slew_dir * 18000;
+        g.pidYaw2Srv.reset_I();
+    } else {
+        float servo_change = g.pidYaw2Srv.get_pid(err);
+        servo_change = constrain_float(servo_change, -18000, 18000);
+        new_servo_out = constrain_float(channel_yaw.servo_out - servo_change, -18000, 18000);
+    }
+
+    // add slew rate limit
+    if (g.yaw_slew_time > 0.02f) {
+        uint16_t max_change = 0.02f * 36000.0f / g.yaw_slew_time;
+        if (max_change < 1) {
+            max_change = 1;
+        }
+        new_servo_out = constrain_float(new_servo_out,
+                                        channel_yaw.servo_out - max_change, 
+                                        channel_yaw.servo_out + max_change);
+    }
+
+    channel_yaw.servo_out = new_servo_out;
+
     channel_yaw.calc_pwm();
     channel_yaw.output();
+}
+
+
+/*
+  control servos for AUTO mode
+ */
+static void update_auto(void)
+{    
+    if (g.startup_delay > 0 && 
+        hal.scheduler->millis() - start_time_ms < g.startup_delay*1000) {
+        return;
+    }
+    update_pitch_servo(nav_status.pitch);
+    update_yaw_servo(nav_status.bearing);
+}
+
+
+/*
+  control servos for MANUAL mode
+ */
+static void update_manual(void)
+{
+    channel_yaw.radio_out = channel_yaw.radio_in;
+    channel_pitch.radio_out = channel_pitch.radio_in;
+    channel_yaw.output();
+    channel_pitch.output();
 }
 
 
@@ -163,28 +219,35 @@ static void update_tracking(void)
     location_update(vpos, vehicle.heading, vehicle.ground_speed * dt);
 
     // update our position if we have at least a 2D fix
-    if (g_gps->status() >= GPS::GPS_OK_FIX_2D) {
-        current_loc.lat = g_gps->latitude;
-        current_loc.lng = g_gps->longitude;
-        current_loc.alt = 0; // assume ground level for now REVISIT: WHY?
+    // REVISIT: what if we lose lock during a mission and the antenna is moving?
+    if (gps.status() >= AP_GPS::GPS_OK_FIX_2D) {
+        current_loc = gps.location();
     }
-    else {
-        current_loc = home_loc; // dont know any better
-    }
+
     // calculate the bearing to the vehicle
     float bearing  = get_bearing_cd(current_loc, vehicle.location) * 0.01f;
     float distance = get_distance(current_loc, vehicle.location);
-    float pitch    = degrees(atan2((vehicle.location.alt - current_loc.alt)/100, distance));
-    // update the servos
-    update_pitch_servo(pitch);
-    update_yaw_servo(bearing);
+    float pitch    = degrees(atan2f(nav_status.altitude_difference, distance));
 
     // update nav_status for NAV_CONTROLLER_OUTPUT
     nav_status.bearing  = bearing;
     nav_status.pitch    = pitch;
     nav_status.distance = distance;
-}
 
+    switch (control_mode) {
+    case AUTO:
+        update_auto();
+        break;
+
+    case MANUAL:
+        update_manual();
+        break;
+
+    case STOP:
+    case INITIALISING:
+        break;
+    }
+}
 
 /**
    handle an updated position from the aircraft
@@ -193,9 +256,38 @@ static void tracking_update_position(const mavlink_global_position_int_t &msg)
 {
     vehicle.location.lat = msg.lat;
     vehicle.location.lng = msg.lon;
-    vehicle.location.alt = msg.relative_alt/10;
+    vehicle.location.alt = msg.alt/10;
+    vehicle.relative_alt = msg.relative_alt/10;
     vehicle.heading      = msg.hdg * 0.01f;
     vehicle.ground_speed = pythagorous2(msg.vx, msg.vy) * 0.01f;
     vehicle.last_update_us = hal.scheduler->micros();    
 }
 
+
+/**
+   handle an updated pressure reading from the aircraft
+ */
+static void tracking_update_pressure(const mavlink_scaled_pressure_t &msg)
+{
+    float local_pressure = barometer.get_pressure();
+    float aircraft_pressure = msg.press_abs*100.0f;
+    float ground_temp = barometer.get_temperature();
+    float scaling = local_pressure / aircraft_pressure;
+
+    // calculate altitude difference based on difference in barometric pressure
+    float alt_diff = logf(scaling) * (ground_temp+273.15f) * 29271.267 * 0.001f;
+    if (!isnan(alt_diff)) {
+        nav_status.altitude_difference = alt_diff;
+    }
+}
+
+/**
+   handle a manual control message by using the data to command yaw and pitch
+ */
+static void tracking_manual_control(const mavlink_manual_control_t &msg)
+{
+    nav_status.bearing = msg.x;
+    nav_status.pitch   = msg.y;
+    nav_status.distance = 0.0;
+    // z, r and buttons are not used
+}

@@ -321,8 +321,8 @@ int16_t DataFlash_File::get_log_data(uint16_t log_num, uint16_t page, uint32_t o
       bug. We can remove this once we find the real bug.
     */
     if (ofs / 4096 != (ofs+len) / 4096) {
-        int seek_current = ::lseek(_read_fd, 0, SEEK_CUR);
-        if (seek_current != _read_offset) {
+        off_t seek_current = ::lseek(_read_fd, 0, SEEK_CUR);
+        if (seek_current != (off_t)_read_offset) {
             ::lseek(_read_fd, _read_offset, SEEK_SET);
         }
     }
@@ -356,7 +356,7 @@ uint16_t DataFlash_File::get_num_logs(void)
 {
     uint16_t ret;
     uint16_t high = find_last_log();
-    for (ret=1; ret<high; ret++) {
+    for (ret=0; ret<high; ret++) {
         if (_get_log_size(high - ret) <= 0) {
             break;
         }
